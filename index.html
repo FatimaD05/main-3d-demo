@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>main-3d-demo</title>
+    <style>
+      body { margin: 0; overflow: hidden; }
+      canvas { position: absolute; top: 0; left: 0; }
+      video { display: none; }
+    </style>
+  </head>
+  <body>
+    <video id="video" width="640" height="480" autoplay playsinline></video>
+
+    <!-- Libs -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.148.0/build/three.min.js"></script>
+
+    <script>
+      const video = document.getElementById("video");
+
+      navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+        video.srcObject = stream;
+      });
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const light = new THREE.PointLight(0xffffff, 1, 100);
+      light.position.set(10, 10, 10);
+      scene.add(light);
+      camera.position.z = 5;
+
+      let sphere = null;
+
+      handpose.load().then((model) => {
+        console.log("Handpose model loaded");
+
+        async function detectHands() {
+          const predictions = await model.estimateHands(video);
+          if (predictions.length > 0) {
+            const landmarks = predictions[0].landmarks;
+            const thumb = landmarks[4];
+            const index = landmarks[8];
+            const middle = landmarks[12];
+
+            const distPinch = Math.hypot(thumb[0] - index[0], thumb[1] - index[1]);
+            const distSnap = Math.hypot(thumb[0] - middle[0], thumb[1] - middle[1]);
+
+            if (distPinch < 20 && !sphere) {
+              const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+              const material = new THREE.MeshStandardMaterial({ color: 0x00ffff });
+              sphere = new THREE.Mesh(geometry, material);
+              scene.add(sphere);
+            }
+
+            if (sphere) {
+              const xNorm = (index[0] / video.width) * 2 - 1;
+              const yNorm = -(index[1] / video.height) * 2 + 1;
+              sphere.position.set(xNorm * 5, yNorm * 3, 0);
+            }
+
+            if (distSnap < 20 && sphere) {
+              scene.remove(sphere);
+              sphere = null;
+              console.log("Snap detected");
+            }
+          }
+
+          renderer.render(scene, camera);
+          requestAnimationFrame(detectHands);
+        }
+
+        detectHands();
+      });
+    </script>
+  </body>
+</html>
